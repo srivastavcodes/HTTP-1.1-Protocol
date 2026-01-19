@@ -8,49 +8,47 @@ import (
 )
 
 type Headers struct {
-	headers map[string]string
+	Headers map[string]string
 }
 
 func NewHeaders() *Headers {
 	return &Headers{
-		headers: make(map[string]string),
+		Headers: make(map[string]string),
 	}
 }
 
 func (h *Headers) Get(name string) string {
-	val := h.headers[strings.ToLower(name)]
+	val := h.Headers[strings.ToLower(name)]
 	return val
 }
 
 func (h *Headers) Set(name string, value string) {
 	name = strings.ToLower(name)
 
-	for _, val := range h.headers {
-		if _, ok := h.headers[name]; ok {
-			h.headers[name] = fmt.Sprintf("%s, %s", val, value)
-		} else {
-			h.headers[name] = value
-		}
+	if v, ok := h.Headers[name]; ok {
+		h.Headers[name] = fmt.Sprintf("%s, %s", v, value)
+	} else {
+		h.Headers[name] = value
 	}
 }
 
 func (h *Headers) Replace(name string, value string) {
-	h.headers[name] = strings.ToLower(value)
+	h.Headers[name] = strings.ToLower(value)
 }
 
 func (h *Headers) Exists(name string) bool {
-	_, ok := h.headers[strings.ToLower(name)]
+	_, ok := h.Headers[strings.ToLower(name)]
 	return ok
 }
 
-func (h *Headers) ParseHeader(reader bufio.Reader) error {
+func (h *Headers) ParseHeader(reader *bufio.Reader) error {
 	for {
 		// reads one header line from the buffer
 		line, err := reader.ReadBytes('\n')
 		if err != nil {
 			return fmt.Errorf("could not parse header %s: %w", line, err)
 		}
-		// removes \r\n and checks end of headers
+		// removes \r\n and checks end of Headers
 		line = bytes.TrimSpace(line)
 		if bytes.Equal(line, []byte("")) {
 			return nil
@@ -71,7 +69,7 @@ func (h *Headers) parseHeader(line []byte) (string, string, error) {
 	}
 	var (
 		name  = header[0]
-		value = header[1]
+		value = bytes.TrimSpace(header[1])
 	)
 	if bytes.HasSuffix(name, []byte(" ")) {
 		return "", "", fmt.Errorf("malformed header name: %s", line)

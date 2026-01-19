@@ -1,6 +1,7 @@
 package request
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"net/url"
@@ -20,18 +21,32 @@ type HTTPRequest struct {
 	Body        string            // Body of the request
 }
 
-func NewHTTPRequest() *HTTPRequest {
-	return &HTTPRequest{
+func RequestFromReader(reader *bufio.Reader) (*HTTPRequest, error) {
+	req := HTTPRequest{
 		QueryParams: make(map[string]string),
 		Headers:     headers.NewHeaders(),
 	}
+	err := req.ParseRequestLine(reader)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing request line: %w", err)
+	}
+	err = req.Headers.ParseHeader(reader)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing request header: %w", err)
+	}
+	// todo -> parse body and write tests
+	return &req, nil
 }
 
 // Request-Line "GET /order/123?image=69 HTTP/1.1"
 
 // ParseRequestLine parses the first line of the entire HTTP request.
-func (r *HTTPRequest) ParseRequestLine(rqLine []byte) error {
-	rlSlice := bytes.Fields(bytes.TrimSpace(rqLine))
+func (r *HTTPRequest) ParseRequestLine(reader *bufio.Reader) error {
+	rl, err := reader.ReadBytes('\n')
+	if err != nil {
+		return fmt.Errorf("error reading request-line: %w", err)
+	}
+	rlSlice := bytes.Fields(bytes.TrimSpace(rl))
 	if len(rlSlice) != 3 {
 		return fmt.Errorf("invalid request line. expected=3 | got=%d", len(rlSlice))
 	}

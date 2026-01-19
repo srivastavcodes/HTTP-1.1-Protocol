@@ -2,17 +2,27 @@ package response
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"sl/internal/headers"
 	"sl/internal/server/html"
 	"strconv"
 	"time"
 )
 
+type ResponseWriter interface {
+	Header() *headers.Headers
+	Write([]byte) (n int, err error)
+}
+
 type HTTPResponse struct {
+	Headers *headers.Headers
 	Code    int
 	Text    string
-	Headers map[string]string
-	Body    string
+
+	io.Writer
+
+	Body string
 }
 
 // NewHTTPResponse creates a response with default values.
@@ -20,9 +30,14 @@ func NewHTTPResponse() *HTTPResponse {
 	return &HTTPResponse{
 		Code:    http.StatusOK,
 		Text:    "OK",
-		Headers: make(map[string]string),
+		Headers: headers.NewHeaders(),
 		Body:    "",
 	}
+}
+
+// Header returns the underlying header map.
+func (r *HTTPResponse) Header() *headers.Headers {
+	return r.Headers
 }
 
 // SetStatus sets the Code and Text in HTTPResponse
@@ -33,21 +48,24 @@ func (r *HTTPResponse) SetStatus(code int, text string) {
 
 // SetHeader sets the headers in HTTPResponse.Headers
 func (r *HTTPResponse) SetHeader(key, value string) {
-	r.Headers[key] = value
+	r.Headers.Set(key, value)
 }
 
 // SetBody sets the Body in HTTPResponse.Body and also write the
 // Content-Length header.
 func (r *HTTPResponse) SetBody(body string) {
-	r.Headers["Content-Length"] = strconv.Itoa(len(body))
+	r.Headers.Replace("Content-Length", strconv.Itoa(len(body)))
 	r.Body = body
 }
 
-// HTTP/1.1 200 OK\r\n
-// Header-Name: Header-Value\r\n
-// Another-Header: Value\r\n
-// \r\n
-// Response Body
+/*
+	HTTP/1.1 200 OK\r\n
+	Header-Name: Header-Value\r\n
+	Content-Type: application/json\r\n
+	Content-Length: 200\r\n
+	\r\n
+	Response Body
+*/
 
 // WriteResponse converts HTTPResponse to raw bytes to send to the
 // client.
@@ -55,7 +73,7 @@ func (r *HTTPResponse) WriteResponse() []byte {
 	response := make([]byte, 0)
 	response = fmt.Appendf(response, "HTTP/1.1 %d %s\r\n", r.Code, r.Text)
 
-	for key, value := range r.Headers {
+	for key, value := range r.Header().Headers {
 		response = fmt.Appendf(response, "%s: %s\r\n", key, value)
 	}
 	response = append(response, []byte("\r\n")...)

@@ -6,24 +6,29 @@ import (
 	"log"
 	"net"
 	"os"
+	"sl/internal/request"
 	"sl/internal/response"
 	"sl/internal/server/html"
-	"strings"
 	"time"
 )
 
 type HTTPServer struct {
-	Host string
-	Port string
-	log  *log.Logger
+	Host    string
+	Port    string
+	log     *log.Logger
+	closed  bool
+	handler Handler
 }
 
-func NewHttpServer(host string, port string) *HTTPServer {
+type Handler func(w response.ResponseWriter, r *request.HTTPRequest)
+
+func NewHttpServer(port string, handler Handler) *HTTPServer {
 	logger := log.New(os.Stdout, "HTTP :: ", log.LstdFlags|log.Lmsgprefix)
 	return &HTTPServer{
-		Host: host,
-		Port: port,
-		log:  logger,
+		Host:    "127.0.0.1",
+		Port:    port,
+		log:     logger,
+		handler: handler,
 	}
 }
 
@@ -55,56 +60,22 @@ func (s *HTTPServer) ServeHTTP() error {
 // HTTP request line and headers, routes the request based on the path, and
 // sends back an appropriate HTTP response before closing the connection.
 func (s *HTTPServer) handleConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	s.logf("new connection from: %s\n", conn.RemoteAddr().String())
-	conn.SetReadDeadline(time.Now().Add(15 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(15 * time.Second))
+
+	writer := response.NewHTTPResponse()
 
 	// reader contains the http request
 	reader := bufio.NewReader(conn)
 
-	reqLine, err := reader.ReadString('\n')
+	req, err := request.RequestFromReader(reader)
 	if err != nil {
-		s.logf("error reading request line: %s\n", err)
+		s.logf("error parsing request: %s\n", err)
 		return
 	}
-	// request line = METHOD PATH VERSION\r\n
-	rlSlice := strings.Fields(strings.TrimSpace(reqLine))
-	if len(rlSlice) != 3 {
-		s.logf("invalid request from %s: %s\n", conn.RemoteAddr(), reqLine)
-		s.sendErrorResponse(conn, 400, "Bad Request")
-		return
-	}
-	var (
-		method  = rlSlice[0]
-		path    = rlSlice[1]
-		version = rlSlice[2]
-	)
-	s.logf("request received :: method=%s url=%s version=%s", method, path, version)
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			s.logf("error reading headers: %s\n", err)
-			return
-		}
-		if strings.TrimSpace(line) == "" {
-			break
-		}
-		s.logf("headers received: %s", strings.TrimSpace(line))
-	}
-	res := []byte(reqLine)
-
-	if strings.Contains(path, "hello") {
-		res = response.SayHello().WriteResponse()
-	} else {
-		s.sendErrorResponse(conn, 400, "Bad Request")
-	}
-	_, err = conn.Write(res)
-	if err != nil {
-		s.logf("error sending res: %s\n", err)
-		return
-	}
-	s.logf("res sent to client %s\n", conn.RemoteAddr().String())
+	s.handler(writer, req)
 }
 
 // TODO: enhance the error handling and html with dynamic data
